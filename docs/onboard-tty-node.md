@@ -91,6 +91,35 @@ bash setup/serve-key-down.sh
 
 With `INSTALL_CLAUDE=1`, every `claude` launch also pulls first (the `wrap` shim).
 
+## Running Claude Code interactively (subscription)
+
+credpipe syncs only the OAuth token (`~/.claude/.credentials.json`). Two extra things are
+needed for the **interactive** TUI with a Claude subscription (non-interactive `claude -p`
+works with just the token):
+
+1. **Onboarding flag.** Interactive claude gates on `hasCompletedOnboarding` in
+   `~/.claude.json`; if unset it shows the first-run *"Select login method"* screen and
+   tries a browser login (impossible headless). `laptop-onboard.sh` now sets it
+   automatically. To set it by hand for any user:
+   ```sh
+   CJ=~/.claude.json
+   [ -f "$CJ" ] && jq '.hasCompletedOnboarding=true' "$CJ" > "$CJ.t" && mv "$CJ.t" "$CJ" \
+     || echo '{"hasCompletedOnboarding":true}' > "$CJ"
+   ```
+2. **Non-root user.** Claude Code refuses `--dangerously-skip-permissions` as root. Run it
+   as a normal user (mirrors the `claude-runner` pattern):
+   ```sh
+   useradd -m -s /bin/bash claude
+   install -d -o claude -g claude -m700 /home/claude/.config/credpipe /home/claude/.claude
+   install -o claude -g claude -m600 ~/.config/credpipe/key        /home/claude/.config/credpipe/key
+   install -o claude -g claude -m600 ~/.claude/.credentials.json   /home/claude/.claude/.credentials.json
+   jq '.hasCompletedOnboarding=true' ~/.claude.json > /home/claude/.claude.json
+   chown claude:claude /home/claude/.claude.json && chmod 600 /home/claude/.claude.json
+   # then:
+   su - claude -c 'claude --dangerously-skip-permissions'
+   ```
+   Verified: `su - claude -c 'claude --dangerously-skip-permissions -p ping'` → `Pong!` (RC 0).
+
 ## Alternatives to the serve channel (key delivery only)
 
 - **scp**: `scp ~/.config/credpipe/key node:~/.config/credpipe/key` then `chmod 600`, then run

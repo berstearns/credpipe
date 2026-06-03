@@ -73,9 +73,22 @@ else
   echo "creds NOT valid JSON at $CREDS" >&2; exit 1
 fi
 
+echo "=== mark interactive onboarding complete (~/.claude.json) ==="
+# credpipe syncs only the token (.credentials.json). Interactive claude ALSO gates on
+# hasCompletedOnboarding in ~/.claude.json — if unset it shows the first-run "Select
+# login method" screen and tries a browser login (impossible headless). Set it so the
+# TUI uses the synced token directly. (-p / print mode already works without this.)
+CJ="$HOME/.claude.json"
+if [ -f "$CJ" ]; then jq '.hasCompletedOnboarding=true' "$CJ" > "$CJ.tmp" && mv "$CJ.tmp" "$CJ"
+else echo '{"hasCompletedOnboarding":true}' > "$CJ"; fi
+chmod 600 "$CJ"; echo "set hasCompletedOnboarding=true in $CJ"
+
 if [ "${INSTALL_CLAUDE:-0}" = "1" ]; then
   echo "=== optional: claude CLI + pull-before-launch wrapper ==="
   CREDPIPE_DEST="$DEST" bash "$DEST/setup/install-claude.sh"
 fi
+
+# NOTE: interactive Claude Code refuses --dangerously-skip-permissions as root. For a
+# usable tty node, run claude as a NON-ROOT user (see docs/onboard-tty-node.md).
 
 echo "LAPTOP_ONBOARD_DONE"
