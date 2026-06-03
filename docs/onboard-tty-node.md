@@ -38,38 +38,36 @@ The node needs four things, passed as env: the relay IP, the serve URL + passcod
 passphrase. Then:
 
 ```sh
-apt-get update && apt-get install -y curl ca-certificates    # just enough to fetch the script
-curl -fsSL https://raw.githubusercontent.com/berstearns/credpipe/master/setup/laptop-onboard.sh -o /tmp/onboard.sh
+apt-get update && apt-get install -y git curl ca-certificates
+git clone --depth 1 https://github.com/berstearns/credpipe /opt/credpipe
 
-CREDPIPE_HOST='<relay-ip>' \
-KEY_URL='https://<relay-ip>:47823/r.conf' \
-SERVE_PASSCODE='<passcode-from-serve-key.sh>' \
-CREDPIPE_KEY_PASSPHRASE='pick-a-strong-passphrase' \
-EXPECTED_FP='<fp-from-credpipe-doctor>' \
-bash /tmp/onboard.sh
+RELAY='<relay-ip>' SERVE_PASSCODE='<passcode-from-serve-key.sh>' \
+bash /opt/credpipe/setup/laptop-onboard.sh        # prompts (hidden) for the key passphrase
 ```
 
-`laptop-onboard.sh` then:
+You pass **only** `RELAY` (the address to reach the serve — the connection target, not a
+config value) and the passcode. **No `CREDPIPE_HOST` inline** — that comes from the served
+`.env`. `laptop-onboard.sh` then:
 1. installs deps (`openssl socat jq curl git ca-certificates`),
-2. clones the public repo to `/opt/credpipe`,
-3. writes `.env` (`CREDPIPE_HOST=…`),
-4. fetches `key.enc`, decrypts it with the passphrase, installs `~/.config/credpipe/key`
-   (mode 600), and **verifies the fingerprint matches main**,
+2. updates the repo at `/opt/credpipe`,
+3. **fetches `.env` from the serve** (`/i.sh`) → the source of truth every script reads,
+4. **fetches the key** from the serve (`/r.conf`), decrypts it with the passphrase, installs
+   `~/.config/credpipe/key` (mode 600), and verifies the fingerprint (if `EXPECTED_FP` set),
 5. symlinks `credpipe` onto PATH,
-6. `credpipe doctor` + `credpipe pull` → installs `~/.claude/.credentials.json` and
-   confirms it's valid JSON.
+6. `credpipe doctor` + `credpipe pull` (reading the fetched `.env`) → installs
+   `~/.claude/.credentials.json` and confirms it's valid JSON.
 
-Add `INSTALL_CLAUDE=1` to also install the `claude` CLI and a pull-before-launch wrapper.
+Secrets (`SERVE_PASSCODE`, passphrase) are prompted if omitted, so they needn't touch
+shell history. Add `EXPECTED_FP=<fp>` to assert the key fingerprint.
 
 ### Fully self-contained one-liner (clone + run from the repo)
 
 ```sh
 apt-get update && apt-get install -y git curl ca-certificates
 git clone --depth 1 https://github.com/berstearns/credpipe /opt/credpipe
-CREDPIPE_HOST='<relay-ip>' KEY_URL='https://<relay-ip>:47823/r.conf' \
-SERVE_PASSCODE='<passcode>' CREDPIPE_KEY_PASSPHRASE='<passphrase>' EXPECTED_FP='<fp>' \
+RELAY='<relay-ip>' SERVE_PASSCODE='<passcode>' EXPECTED_FP='<fp>' \
 INSTALL_CLAUDE=1 RUN_USER=claude \
-bash /opt/credpipe/setup/laptop-onboard.sh
+bash /opt/credpipe/setup/laptop-onboard.sh        # prompts (hidden) for the passphrase
 ```
 
 With `INSTALL_CLAUDE=1 RUN_USER=claude`, that single command does **everything**: deps →
