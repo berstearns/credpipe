@@ -9,7 +9,10 @@
 set -euo pipefail
 
 # ---- load config -----------------------------------------------------------
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve symlinks so `.env` is found next to the REAL script even when credpipe
+# is invoked through a symlink on PATH (the README's own install method).
+SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+HERE="$(cd "$(dirname "$SELF")" && pwd)"
 # shellcheck disable=SC1091
 [ -f "$HERE/.env" ] && { set -a; . "$HERE/.env"; set +a; }
 
