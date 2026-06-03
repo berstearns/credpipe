@@ -16,8 +16,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CREDPIPE_HOST="${CREDPIPE_HOST:-}"
 CREDPIPE_PULL_PORT="${CREDPIPE_PULL_PORT:-9000}"
 CREDPIPE_PUSH_PORT="${CREDPIPE_PUSH_PORT:-9001}"
-CREDPIPE_KEY="${CREDPIPE_KEY:-$HOME/.config/credpipe/key}"
-CREDPIPE_CREDS="${CREDPIPE_CREDS:-$HOME/.claude/.credentials.json}"
+# systemd starts services with no $HOME; under `set -u` an unset HOME is fatal at
+# config-load time even though `serve` never uses these paths. Fall back to /root.
+CREDPIPE_KEY="${CREDPIPE_KEY:-${HOME:-/root}/.config/credpipe/key}"
+CREDPIPE_CREDS="${CREDPIPE_CREDS:-${HOME:-/root}/.claude/.credentials.json}"
 CREDPIPE_BLOB="${CREDPIPE_BLOB:-/srv/credpipe/creds.enc}"   # relay-side path (serve only)
 CREDPIPE_REAL_CLAUDE="${CREDPIPE_REAL_CLAUDE:-}"            # absolute path to the real claude (wrap only)
 

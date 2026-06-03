@@ -1,0 +1,11 @@
+[Unit]
+Description=credpipe relay (dumb encrypted mailbox; never holds the key)
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/credpipe serve
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
