@@ -1,0 +1,8 @@
+# your private deployment — never publish
+.env
+
+# never let a key escape into git, whatever it's named
+*.key
+key
+creds.enc
+*.enc

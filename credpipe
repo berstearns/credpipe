@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# credpipe — sync one OAuth credential file across machines through a dumb public relay.
+#
+# Model: a symmetric-encrypted blob travels over raw TCP (socat).
+#        ONE writer (main), MANY readers (laptops). The relay never holds the key.
+#        Confidentiality = openssl. Integrity = readers install only if it's valid JSON.
+#
+# Usage: credpipe {keygen|push|pull|serve|wrap|doctor|help}
+set -euo pipefail
+
+# ---- load config -----------------------------------------------------------
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+[ -f "$HERE/.env" ] && { set -a; . "$HERE/.env"; set +a; }
+
+CREDPIPE_HOST="${CREDPIPE_HOST:-}"
+CREDPIPE_PULL_PORT="${CREDPIPE_PULL_PORT:-9000}"
+CREDPIPE_PUSH_PORT="${CREDPIPE_PUSH_PORT:-9001}"
+CREDPIPE_KEY="${CREDPIPE_KEY:-$HOME/.config/credpipe/key}"
+CREDPIPE_CREDS="${CREDPIPE_CREDS:-$HOME/.claude/.credentials.json}"
+CREDPIPE_BLOB="${CREDPIPE_BLOB:-/srv/credpipe/creds.enc}"   # relay-side path (serve only)
+CREDPIPE_REAL_CLAUDE="${CREDPIPE_REAL_CLAUDE:-}"            # absolute path to the real claude (wrap only)
+
+die(){ echo "credpipe: $*" >&2; exit 1; }
+need(){ command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1 (see README)"; }
+
+enc(){ openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:"$CREDPIPE_KEY"; }
+dec(){ openssl enc -d -aes-256-cbc -pbkdf2     -pass file:"$CREDPIPE_KEY"; }
+
+cmd="${1:-help}"; shift || true
+case "$cmd" in
+
+  keygen)   # run ONCE, then copy the key to every machine out-of-band
+    need openssl
+    mkdir -p "$(dirname "$CREDPIPE_KEY")"
+    [ -s "$CREDPIPE_KEY" ] && die "key already exists at $CREDPIPE_KEY (refusing to overwrite)"
+    openssl rand -base64 32 > "$CREDPIPE_KEY"
+    chmod 600 "$CREDPIPE_KEY"
+    echo "key written : $CREDPIPE_KEY"
+    echo "fingerprint : $(sha256sum "$CREDPIPE_KEY" | cut -c1-16)"
+    echo "now copy this SAME file to every machine (USB / scp / paste-into-tmux)."
+    echo "NEVER send it through the relay."
+    ;;
+
+  push)     # main -> relay : encrypt local creds, ship ciphertext
+    need openssl; need socat
+    [ -n "$CREDPIPE_HOST" ]  || die "set CREDPIPE_HOST in .env"
+    [ -s "$CREDPIPE_KEY" ]   || die "no key at $CREDPIPE_KEY (run: credpipe keygen)"
+    [ -s "$CREDPIPE_CREDS" ] || die "no creds at $CREDPIPE_CREDS (log into claude on this machine first)"
+    enc < "$CREDPIPE_CREDS" | socat - TCP:"$CREDPIPE_HOST":"$CREDPIPE_PUSH_PORT"
+    echo "pushed $(date '+%Y-%m-%d %H:%M:%S')"
+    ;;
+
+  pull)     # relay -> laptop : fetch, decrypt, install only if valid JSON
+    need openssl; need socat; need jq
+    [ -n "$CREDPIPE_HOST" ] || die "set CREDPIPE_HOST in .env"
+    [ -s "$CREDPIPE_KEY" ]  || die "no key at $CREDPIPE_KEY"
+    tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+    if ! socat - TCP:"$CREDPIPE_HOST":"$CREDPIPE_PULL_PORT" | dec > "$tmp" 2>/dev/null; then
+      echo "pull: fetch/decrypt failed — keeping current creds"; exit 0
+    fi
+    jq -e . "$tmp" >/dev/null 2>&1 || { echo "pull: blob not valid json — keeping current creds"; exit 0; }
+    mkdir -p "$(dirname "$CREDPIPE_CREDS")"
+    install -m600 "$tmp" "$CREDPIPE_CREDS"
+    echo "pulled $(date '+%Y-%m-%d %H:%M:%S')"
+    ;;
+
+  serve)    # run on the VPS : two dumb listeners, no key involved
+    need socat
+    mkdir -p "$(dirname "$CREDPIPE_BLOB")"
+    echo "credpipe relay: blob=$CREDPIPE_BLOB  pull=:$CREDPIPE_PULL_PORT  push=:$CREDPIPE_PUSH_PORT"
+    socat TCP-LISTEN:"$CREDPIPE_PULL_PORT",reuseaddr,fork SYSTEM:"cat '$CREDPIPE_BLOB'" &
+    socat TCP-LISTEN:"$CREDPIPE_PUSH_PORT",reuseaddr,fork \
+          SYSTEM:"cat > '$CREDPIPE_BLOB.tmp' && mv '$CREDPIPE_BLOB.tmp' '$CREDPIPE_BLOB'" &
+    wait
+    ;;
+
+  wrap)     # laptop launch wrapper : refresh creds, then become the real claude
+    "$HERE/credpipe" pull >/dev/null 2>&1 || true
+    [ -n "$CREDPIPE_REAL_CLAUDE" ] || die "set CREDPIPE_REAL_CLAUDE to the real claude path in .env"
+    exec "$CREDPIPE_REAL_CLAUDE" "$@"
+    ;;
+
+  doctor)   # tell me why it isn't working
+    echo "deps:"
+    for c in openssl socat jq; do
+      command -v "$c" >/dev/null 2>&1 && echo "  ok   $c" || echo "  MISS $c"
+    done
+    echo "config:"
+    echo "  host  : ${CREDPIPE_HOST:-<UNSET — set CREDPIPE_HOST in .env>}"
+    echo "  ports : pull=:$CREDPIPE_PULL_PORT push=:$CREDPIPE_PUSH_PORT"
+    if [ -s "$CREDPIPE_KEY" ]; then
+      echo "  key   : $CREDPIPE_KEY  fp=$(sha256sum "$CREDPIPE_KEY" | cut -c1-16)  (must match on all machines)"
+    else
+      echo "  key   : MISSING at $CREDPIPE_KEY  (run: credpipe keygen)"
+    fi
+    echo "  creds : $([ -s "$CREDPIPE_CREDS" ] && echo present || echo absent) at $CREDPIPE_CREDS"
+    if [ -n "$CREDPIPE_HOST" ] && command -v socat >/dev/null 2>&1; then
+      if socat -T3 - TCP:"$CREDPIPE_HOST":"$CREDPIPE_PULL_PORT" </dev/null >/dev/null 2>&1; then
+        echo "  relay : reachable on :$CREDPIPE_PULL_PORT"
+      else
+        echo "  relay : NOT reachable on :$CREDPIPE_PULL_PORT (firewall? serve not running?)"
+      fi
+    fi
+    ;;
+
+  help|*)
+    cat <<'EOF'
+credpipe — sync Claude OAuth creds across machines via a dumb public relay.
+
+  credpipe keygen     generate the shared key   (ONCE; copy to every machine)
+  credpipe serve      run the relay listeners   (on the VPS)
+  credpipe push       encrypt + upload creds    (on MAIN, on a timer)
+  credpipe pull       download + install creds  (on LAPTOPS, on a timer)
+  credpipe wrap …     pull then exec real claude(laptop launch wrapper)
+  credpipe doctor     check deps / key / relay
+
+Config lives in .env next to this script. Only CREDPIPE_HOST is required.
+Full docs: README.md
+EOF
+    ;;
+esac
