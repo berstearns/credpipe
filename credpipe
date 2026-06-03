@@ -47,7 +47,12 @@ case "$cmd" in
     [ -n "$CREDPIPE_HOST" ]  || die "set CREDPIPE_HOST in .env"
     [ -s "$CREDPIPE_KEY" ]   || die "no key at $CREDPIPE_KEY (run: credpipe keygen)"
     [ -s "$CREDPIPE_CREDS" ] || die "no creds at $CREDPIPE_CREDS (log into claude on this machine first)"
-    enc < "$CREDPIPE_CREDS" | socat - TCP:"$CREDPIPE_HOST":"$CREDPIPE_PUSH_PORT"
+    # Encrypt fully to disk FIRST, then stream the complete blob. Streaming
+    # openssl directly into socat lets a connect race break openssl's pipe
+    # ("bad encrypt") and can ship a truncated blob; this avoids both.
+    tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+    enc < "$CREDPIPE_CREDS" > "$tmp"
+    socat - TCP:"$CREDPIPE_HOST":"$CREDPIPE_PUSH_PORT" < "$tmp"
     echo "pushed $(date '+%Y-%m-%d %H:%M:%S')"
     ;;
 
