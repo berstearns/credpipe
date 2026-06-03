@@ -1,8 +1,8 @@
 # your private deployment — never publish
 .env
 
-# per-run runbooks (contain the real relay IP / deployment specifics)
-runbook/
+# per-run runbooks with the real relay IP (root-level only; docs/runbook/ is masked + tracked)
+/runbook/
 
 # never let a key escape into git, whatever it's named
 *.key
