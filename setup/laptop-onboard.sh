@@ -88,7 +88,11 @@ if [ "${INSTALL_CLAUDE:-0}" = "1" ]; then
   CREDPIPE_DEST="$DEST" bash "$DEST/setup/install-claude.sh"
 fi
 
-# NOTE: interactive Claude Code refuses --dangerously-skip-permissions as root. For a
-# usable tty node, run claude as a NON-ROOT user (see docs/onboard-tty-node.md).
+# Interactive Claude Code refuses --dangerously-skip-permissions as root. Set RUN_USER to
+# provision a non-root user (key + creds + onboarding flag) that can run claude.
+if [ -n "${RUN_USER:-}" ]; then
+  echo "=== provision non-root run user: $RUN_USER ==="
+  RUN_USER="$RUN_USER" SRC_HOME="$HOME" CREDPIPE_DEST="$DEST" bash "$DEST/setup/setup-claude-user.sh"
+fi
 
 echo "LAPTOP_ONBOARD_DONE"

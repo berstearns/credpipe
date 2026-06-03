@@ -67,9 +67,15 @@ Add `INSTALL_CLAUDE=1` to also install the `claude` CLI and a pull-before-launch
 apt-get update && apt-get install -y git curl ca-certificates
 git clone --depth 1 https://github.com/berstearns/credpipe /opt/credpipe
 CREDPIPE_HOST='<relay-ip>' KEY_URL='https://<relay-ip>:47823/r.conf' \
-SERVE_PASSCODE='<passcode>' CREDPIPE_KEY_PASSPHRASE='<passphrase>' \
-EXPECTED_FP='<fp>' bash /opt/credpipe/setup/laptop-onboard.sh
+SERVE_PASSCODE='<passcode>' CREDPIPE_KEY_PASSPHRASE='<passphrase>' EXPECTED_FP='<fp>' \
+INSTALL_CLAUDE=1 RUN_USER=claude \
+bash /opt/credpipe/setup/laptop-onboard.sh
 ```
+
+With `INSTALL_CLAUDE=1 RUN_USER=claude`, that single command does **everything**: deps →
+clone → `.env` → key fetch+verify → pull creds → onboarding flag → install Node + Claude
+Code + pull-before-launch wrapper → provision the non-root `claude` user (key + creds +
+flag) and verify `claude -p ping` runs as them. Then: `su - claude -c 'claude --dangerously-skip-permissions'`.
 
 ---
 
@@ -106,19 +112,15 @@ works with just the token):
    [ -f "$CJ" ] && jq '.hasCompletedOnboarding=true' "$CJ" > "$CJ.t" && mv "$CJ.t" "$CJ" \
      || echo '{"hasCompletedOnboarding":true}' > "$CJ"
    ```
-2. **Non-root user.** Claude Code refuses `--dangerously-skip-permissions` as root. Run it
-   as a normal user (mirrors the `claude-runner` pattern):
+2. **Non-root user.** Claude Code refuses `--dangerously-skip-permissions` as root, so run it
+   as a normal user (mirrors the `claude-runner` pattern). This is fully scripted —
+   `setup/setup-claude-user.sh` creates the user and provisions the key, creds, and
+   onboarding flag, then verifies:
    ```sh
-   useradd -m -s /bin/bash claude
-   install -d -o claude -g claude -m700 /home/claude/.config/credpipe /home/claude/.claude
-   install -o claude -g claude -m600 ~/.config/credpipe/key        /home/claude/.config/credpipe/key
-   install -o claude -g claude -m600 ~/.claude/.credentials.json   /home/claude/.claude/.credentials.json
-   jq '.hasCompletedOnboarding=true' ~/.claude.json > /home/claude/.claude.json
-   chown claude:claude /home/claude/.claude.json && chmod 600 /home/claude/.claude.json
-   # then:
+   RUN_USER=claude bash /opt/credpipe/setup/setup-claude-user.sh
    su - claude -c 'claude --dangerously-skip-permissions'
    ```
-   Verified: `su - claude -c 'claude --dangerously-skip-permissions -p ping'` → `Pong!` (RC 0).
+   The script's own check runs `claude -p ping` as the user → `Pong!` (verified in a container).
 
 ## Alternatives to the serve channel (key delivery only)
 
