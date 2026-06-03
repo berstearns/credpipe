@@ -4,11 +4,10 @@
 # passphrase-wrapped key — so nothing (not even CREDPIPE_HOST) is passed inline. Every
 # script then reads config from the fetched .env. Idempotent.
 #
-# Required (only enough to REACH the serve channel — the relay address is the connection
-# target, not a config value):
+# Fully non-interactive — ALL values come from the command (no prompts). Required:
 #   RELAY                    relay IP/DNS (serve + relay host)
-#   SERVE_PASSCODE           basicauth passcode from serve-key.sh   (prompted if unset)
-#   CREDPIPE_KEY_PASSPHRASE  passphrase to decrypt the key          (prompted if unset)
+#   SERVE_PASSCODE           basicauth passcode from serve-key.sh
+#   CREDPIPE_KEY_PASSPHRASE  passphrase to decrypt the key (same one used to serve)
 # Optional:
 #   SERVE_PORT (default 47823), EXPECTED_FP, CREDPIPE_REPO, CREDPIPE_DEST,
 #   INSTALL_CLAUDE=1, RUN_USER=<name>
@@ -16,7 +15,9 @@ set -euo pipefail
 DEST="${CREDPIPE_DEST:-/opt/credpipe}"
 SERVE_PORT="${SERVE_PORT:-47823}"
 KEY="$HOME/.config/credpipe/key"
-: "${RELAY:?set RELAY to the relay IP/DNS (the serve host)}"
+: "${RELAY:?set RELAY=<relay ip/dns> in the command}"
+: "${SERVE_PASSCODE:?set SERVE_PASSCODE=<from serve-key.sh> in the command}"
+: "${CREDPIPE_KEY_PASSPHRASE:?set CREDPIPE_KEY_PASSPHRASE=<wrap passphrase> in the command}"
 
 echo "=== 1/6 deps ==="
 export DEBIAN_FRONTEND=noninteractive
@@ -29,9 +30,6 @@ echo "=== 2/6 fetch credpipe repo ==="
 REPO_URL="${CREDPIPE_REPO:-https://github.com/berstearns/credpipe}"
 if [ -d "$DEST/.git" ]; then git -C "$DEST" pull --ff-only; else git clone --depth 1 "$REPO_URL" "$DEST"; fi
 
-# Secrets: prompt if not supplied, so they never have to land in shell history.
-if [ -z "${SERVE_PASSCODE:-}" ]; then read -rp "serve passcode: " SERVE_PASSCODE; fi
-if [ -z "${CREDPIPE_KEY_PASSPHRASE:-}" ]; then read -rsp "key passphrase: " CREDPIPE_KEY_PASSPHRASE; echo; fi
 BASE="https://$RELAY:$SERVE_PORT"
 AUTH=(-u "bootstrap:$SERVE_PASSCODE" -k)
 
