@@ -75,14 +75,7 @@ fi
 
 if [ "${INSTALL_CLAUDE:-0}" = "1" ]; then
   echo "=== optional: claude CLI + pull-before-launch wrapper ==="
-  command -v claude >/dev/null || { command -v npm >/dev/null && npm i -g @anthropic-ai/claude-code >/dev/null 2>&1 || echo "skip: npm not present"; }
-  if command -v claude >/dev/null; then
-    real="$(command -v claude)"
-    printf 'CREDPIPE_REAL_CLAUDE=%s\n' "$real" >> "$DEST/.env"
-    printf '#!/usr/bin/env sh\nexec %s/credpipe wrap "$@"\n' "$DEST" > /usr/local/bin/claude
-    chmod +x /usr/local/bin/claude
-    echo "wrapper installed: /usr/local/bin/claude -> credpipe wrap -> $real"
-  fi
+  CREDPIPE_DEST="$DEST" bash "$DEST/setup/install-claude.sh"
 fi
 
 echo "LAPTOP_ONBOARD_DONE"
